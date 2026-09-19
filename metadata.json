@@ -1,0 +1,6 @@
+{
+  "name": "USSD Command Listener",
+  "description": "Background command execution service for call forwarding USSD codes via Supabase.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
