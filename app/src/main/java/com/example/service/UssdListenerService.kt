@@ -80,6 +80,7 @@ class UssdListenerService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        SupabaseManager.init(this)
         createNotificationChannel()
     }
 

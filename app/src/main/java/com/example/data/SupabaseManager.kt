@@ -1,7 +1,7 @@
 package com.example.data
 
+import android.content.Context
 import android.util.Log
-import com.example.BuildConfig
 import com.example.service.ServiceState
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.createSupabaseClient
@@ -22,35 +22,54 @@ object SupabaseManager {
 
     private const val TAG = "SupabaseManager"
 
+    @Volatile
+    private var clientInstance: SupabaseClient? = null
+
+    @Volatile
+    private var activeUrl: String = ""
+
+    @Volatile
+    private var activeKey: String = ""
+
     val supabaseUrl: String
-        get() = try {
-            BuildConfig.SUPABASE_URL
-        } catch (e: Exception) {
-            ""
-        }
+        get() = activeUrl
 
     val supabaseKey: String
-        get() = try {
-            BuildConfig.SUPABASE_ANON_KEY
-        } catch (e: Exception) {
-            ""
-        }
+        get() = activeKey
 
     val isConfigured: Boolean
-        get() = supabaseUrl.isNotBlank() &&
-                !supabaseUrl.contains("your-project") &&
-                supabaseKey.isNotBlank() &&
-                !supabaseKey.contains("your-supabase-anon-key")
+        get() = activeUrl.isNotBlank() &&
+                SupabaseConfigManager.isValidHttpsUrl(activeUrl) &&
+                !SupabaseConfigManager.isPlaceholderKey(activeKey)
 
-    val client: SupabaseClient? by lazy {
-        if (!isConfigured) {
-            Log.w(TAG, "Supabase credentials are not configured properly in BuildConfig.")
-            null
-        } else {
+    val client: SupabaseClient?
+        get() = clientInstance
+
+    @Synchronized
+    fun init(context: Context) {
+        val url = SupabaseConfigManager.getSupabaseUrl(context)
+        val key = SupabaseConfigManager.getSupabaseKey(context)
+        updateCredentials(url, key)
+    }
+
+    @Synchronized
+    fun updateCredentials(url: String, key: String) {
+        val cleanUrl = url.trim().trimEnd('/')
+        val cleanKey = key.trim()
+
+        if (cleanUrl == activeUrl && cleanKey == activeKey && clientInstance != null) {
+            return
+        }
+
+        activeUrl = cleanUrl
+        activeKey = cleanKey
+
+        clientInstance = if (isConfigured) {
             try {
+                Log.d(TAG, "Creating SupabaseClient with configured URL: $activeUrl")
                 createSupabaseClient(
-                    supabaseUrl = supabaseUrl,
-                    supabaseKey = supabaseKey
+                    supabaseUrl = activeUrl,
+                    supabaseKey = activeKey
                 ) {
                     install(Postgrest)
                     install(Realtime)
@@ -59,6 +78,9 @@ object SupabaseManager {
                 Log.e(TAG, "Error initializing Supabase client: ${e.localizedMessage}", e)
                 null
             }
+        } else {
+            Log.w(TAG, "Supabase client not initialized: credentials missing or invalid in local config.")
+            null
         }
     }
 

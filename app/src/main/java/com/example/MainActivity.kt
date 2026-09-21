@@ -85,6 +85,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.CommandRow
 import com.example.ui.MainViewModel
+import com.example.ui.SupabaseSettingsDialog
+import com.example.ui.SupabaseSetupScreen
 import com.example.ui.theme.MyApplicationTheme
 
 class MainActivity : ComponentActivity() {
@@ -97,7 +99,25 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MyApplicationTheme {
-                MainScreen(viewModel = viewModel)
+                val isConfigured by viewModel.isSupabaseConfigured.collectAsStateWithLifecycle()
+                val savedUrl by viewModel.supabaseUrl.collectAsStateWithLifecycle()
+                val savedKey by viewModel.supabaseKey.collectAsStateWithLifecycle()
+
+                LaunchedEffect(Unit) {
+                    viewModel.initDeviceAndHeartbeat(this@MainActivity)
+                }
+
+                if (!isConfigured) {
+                    SupabaseSetupScreen(
+                        initialUrl = savedUrl,
+                        initialKey = savedKey,
+                        onSave = { url, key ->
+                            viewModel.saveSupabaseConfig(this@MainActivity, url, key)
+                        }
+                    )
+                } else {
+                    MainScreen(viewModel = viewModel)
+                }
             }
         }
     }
@@ -133,7 +153,11 @@ fun MainScreen(viewModel: MainViewModel) {
     val testResult by viewModel.testCommandResult.collectAsStateWithLifecycle()
 
     var showRationaleDialog by remember { mutableStateOf(false) }
+    var showSupabaseSettingsDialog by remember { mutableStateOf(false) }
     var testPhoneNumber by remember { mutableStateOf("+15550199") }
+
+    val savedUrl by viewModel.supabaseUrl.collectAsStateWithLifecycle()
+    val savedKey by viewModel.supabaseKey.collectAsStateWithLifecycle()
 
     // Permission Launcher
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -171,6 +195,23 @@ fun MainScreen(viewModel: MainViewModel) {
                 notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         }
+    }
+
+    if (showSupabaseSettingsDialog) {
+        SupabaseSettingsDialog(
+            initialUrl = savedUrl,
+            initialKey = savedKey,
+            onDismiss = { showSupabaseSettingsDialog = false },
+            onSave = { url, key ->
+                viewModel.saveSupabaseConfig(context, url, key)
+                showSupabaseSettingsDialog = false
+            },
+            onClear = {
+                com.example.data.SupabaseConfigManager.clearConfig(context)
+                viewModel.refreshConfig(context)
+                showSupabaseSettingsDialog = false
+            }
+        )
     }
 
     // Rationale Dialog
@@ -229,6 +270,17 @@ fun MainScreen(viewModel: MainViewModel) {
                             text = "USSD Command Listener",
                             fontWeight = FontWeight.Bold,
                             fontSize = 20.sp
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(
+                        onClick = { showSupabaseSettingsDialog = true },
+                        modifier = Modifier.testTag("supabase_settings_menu_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "Supabase Settings"
                         )
                     }
                 },
@@ -295,9 +347,11 @@ fun MainScreen(viewModel: MainViewModel) {
 
             // 3. SUPABASE CONFIGURATION CARD
             item {
+                val isSupabaseConfigured by viewModel.isSupabaseConfigured.collectAsStateWithLifecycle()
                 SupabaseConfigCard(
-                    isConfigured = viewModel.isSupabaseConfigured,
-                    urlHost = viewModel.supabaseUrlHost
+                    isConfigured = isSupabaseConfigured,
+                    urlHost = viewModel.supabaseUrlHost,
+                    onOpenSettings = { showSupabaseSettingsDialog = true }
                 )
             }
 
@@ -544,7 +598,8 @@ fun PermissionDeniedCard(
 @Composable
 fun SupabaseConfigCard(
     isConfigured: Boolean,
-    urlHost: String
+    urlHost: String,
+    onOpenSettings: (() -> Unit)? = null
 ) {
     Card(
         modifier = Modifier
@@ -583,6 +638,7 @@ fun SupabaseConfigCard(
                     overflow = TextOverflow.Ellipsis
                 )
             }
+            Spacer(modifier = Modifier.width(8.dp))
             Surface(
                 color = if (isConfigured) Color(0xFFE8F5E9) else Color(0xFFFFEBEE),
                 shape = RoundedCornerShape(8.dp)
@@ -594,6 +650,18 @@ fun SupabaseConfigCard(
                     fontWeight = FontWeight.Bold,
                     color = if (isConfigured) Color(0xFF2E7D32) else Color(0xFFC62828)
                 )
+            }
+            if (onOpenSettings != null) {
+                IconButton(
+                    onClick = onOpenSettings,
+                    modifier = Modifier.testTag("edit_supabase_config_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = "Edit Supabase Configuration",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
         }
     }

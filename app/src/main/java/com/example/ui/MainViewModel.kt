@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.CommandRow
+import com.example.data.SupabaseConfigManager
 import com.example.data.SupabaseManager
 import com.example.service.ServiceState
 import com.example.service.UssdListenerService
@@ -32,17 +33,23 @@ class MainViewModel : ViewModel() {
 
     private var heartbeatJob: Job? = null
 
-    val isSupabaseConfigured: Boolean
-        get() = SupabaseManager.isConfigured
+    private val _isSupabaseConfigured = MutableStateFlow(false)
+    val isSupabaseConfigured: StateFlow<Boolean> = _isSupabaseConfigured.asStateFlow()
+
+    private val _supabaseUrl = MutableStateFlow("")
+    val supabaseUrl: StateFlow<String> = _supabaseUrl.asStateFlow()
+
+    private val _supabaseKey = MutableStateFlow("")
+    val supabaseKey: StateFlow<String> = _supabaseKey.asStateFlow()
 
     val supabaseUrlHost: String
         get() = try {
-            val url = SupabaseManager.supabaseUrl
+            val url = _supabaseUrl.value.ifBlank { SupabaseManager.supabaseUrl }
             if (url.startsWith("http")) {
                 java.net.URI(url).host ?: url
-            } else url
+            } else if (url.isNotBlank()) url else "NOT SET"
         } catch (e: Exception) {
-            "Not configured"
+            "NOT SET"
         }
 
     private val _isPermissionGranted = MutableStateFlow(false)
@@ -55,6 +62,7 @@ class MainViewModel : ViewModel() {
     val testCommandResult: StateFlow<String?> = _testCommandResult.asStateFlow()
 
     fun initDeviceAndHeartbeat(context: Context) {
+        refreshConfig(context)
         val id = DeviceUtils.getDeviceId(context)
         ServiceState.setDeviceId(id)
 
@@ -66,6 +74,24 @@ class MainViewModel : ViewModel() {
                 }
             }
         }
+    }
+
+    fun refreshConfig(context: Context) {
+        SupabaseManager.init(context)
+        _isSupabaseConfigured.value = SupabaseConfigManager.isConfigured(context)
+        _supabaseUrl.value = SupabaseConfigManager.getSupabaseUrl(context)
+        _supabaseKey.value = SupabaseConfigManager.getSupabaseKey(context)
+    }
+
+    fun saveSupabaseConfig(context: Context, url: String, key: String): Boolean {
+        if (!SupabaseConfigManager.isValidHttpsUrl(url) || SupabaseConfigManager.isPlaceholderKey(key)) {
+            return false
+        }
+        SupabaseConfigManager.saveConfig(context, url, key)
+        refreshConfig(context)
+        ServiceState.addLog("Supabase configuration saved: $url")
+        performHeartbeat(context)
+        return true
     }
 
     fun performHeartbeat(context: Context) {
